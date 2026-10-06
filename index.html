@@ -26,6 +26,7 @@ video{width:100%;border-radius:14px;background:#111;display:block}
 .history{padding:12px 0;border-bottom:1px solid #eee}
 @media(max-width:450px){.stats{grid-template-columns:1fr}}
 </style>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -40,7 +41,7 @@ video{width:100%;border-radius:14px;background:#111;display:block}
 <h2>📷 Scanner un chantier</h2>
 <button class="primary" id="scanBtn">Scanner le QR code</button>
 <div id="scannerBox" class="hidden" style="margin-top:12px">
- <video id="video" playsinline></video>
+ <div id="qr-reader" style="width:100%"></div>
  <p class="muted" id="scanStatus">Autorise la caméra puis présente le QR code.</p>
  <button class="secondary" id="stopBtn">Arrêter</button>
 </div>
@@ -83,7 +84,7 @@ const euro=n=>new Intl.NumberFormat('fr-BE',{style:'currency',currency:'EUR'}).f
 const dateNow=()=>new Date().toLocaleDateString('en-CA');
 let sheets=JSON.parse(localStorage.getItem('forfait_sheets')||'[]');
 let history=JSON.parse(localStorage.getItem('forfait_history')||'[]');
-let active=null, stream=null, detector=null, scanning=false;
+let active=null, scanning=false, qrScanner=null;
 
 function save(){localStorage.setItem('forfait_sheets',JSON.stringify(sheets));localStorage.setItem('forfait_history',JSON.stringify(history));}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -144,19 +145,43 @@ $('clearHistory').onclick=()=>{if(confirm('Effacer tout l’historique ?')){hist
 
 async function startScan(){
  if(scanning)return;
- if(!('BarcodeDetector' in window)){ $('msg').textContent='Le scan caméra automatique n’est pas disponible dans ce navigateur. Utilise la saisie manuelle du QR.';return; }
+ if(!window.Html5Qrcode){
+  $('msg').textContent='Le module de scan n’est pas encore chargé. Vérifie ta connexion puis réessaie.';
+  return;
+ }
  try{
-  detector=new BarcodeDetector({formats:['qr_code']});
-  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});
-  $('video').srcObject=stream;await $('video').play();$('scannerBox').classList.remove('hidden');scanning=true;scanLoop();
- }catch(e){$('msg').textContent='Caméra refusée ou indisponible. Autorise la caméra puis réessaie.'}
+  $('scannerBox').classList.remove('hidden');
+  $('scanStatus').textContent='Autorise la caméra puis présente le QR code devant le cadre.';
+  qrScanner=new Html5Qrcode('qr-reader');
+  scanning=true;
+  await qrScanner.start(
+   {facingMode:'environment'},
+   {fps:10,qrbox:{width:250,height:250},aspectRatio:1.0},
+   value=>{
+    stopScan();
+    $('manualQr').value=value;
+    openSheet(value);
+   },
+   ()=>{}
+  );
+ }catch(e){
+  scanning=false;
+  $('scannerBox').classList.add('hidden');
+  if(qrScanner){try{await qrScanner.clear()}catch(_){}}
+  qrScanner=null;
+  $('msg').textContent='Impossible d’accéder à la caméra. Vérifie l’autorisation caméra de Safari puis réessaie.';
+ }
 }
-async function scanLoop(){
- if(!scanning)return;
- try{const codes=await detector.detect($('video'));if(codes.length){const value=codes[0].rawValue;stopScan();$('manualQr').value=value;openSheet(value);return}}catch(e){}
- requestAnimationFrame(scanLoop);
+async function stopScan(){
+ scanning=false;
+ if(qrScanner){
+  try{await qrScanner.stop()}catch(_){}
+  try{await qrScanner.clear()}catch(_){}
+  qrScanner=null;
+ }
+ $('qr-reader').innerHTML='';
+ $('scannerBox').classList.add('hidden');
 }
-function stopScan(){scanning=false;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('video').srcObject=null;$('scannerBox').classList.add('hidden')}
 $('scanBtn').onclick=startScan;$('stopBtn').onclick=stopScan;
 $('workDate').value=dateNow();render();
 </script>
