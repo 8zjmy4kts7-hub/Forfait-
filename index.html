@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-512.png">
+<title>Forfait</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;background:#f3f4f6}
+*{box-sizing:border-box}body{margin:0}.app{max-width:650px;margin:auto;padding:18px 14px 40px}
+h1{margin:5px 0 18px;font-size:30px}h2{font-size:18px;margin:0 0 12px}
+.card{background:white;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 2px 10px #0000000b}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{background:#f9fafb;border-radius:14px;padding:14px}
+.big{font-size:27px;font-weight:800}.muted{color:#6b7280;font-size:13px}
+button,input{font:inherit}button{min-height:46px;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer}
+.primary{background:#111827;color:white;width:100%}.secondary{background:#e5e7eb;color:#111827}
+.danger{background:#fee2e2;color:#991b1b}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
+input{width:100%;padding:12px;border:1px solid #d1d5db;border-radius:11px;background:white}
+label{font-size:13px;color:#6b7280;display:block;margin:8px 0 5px}
+.post{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #eee}
+.post input[type=checkbox]{width:22px;height:22px}.amount{font-weight:700;margin-left:auto}
+video{width:100%;border-radius:14px;background:#111;display:block}
+.hidden{display:none!important}.pill{display:inline-block;background:#eef2ff;border-radius:999px;padding:5px 9px;font-size:12px}
+.history{padding:12px 0;border-bottom:1px solid #eee}
+@media(max-width:450px){.stats{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>Forfait</h1>
+
+<div class="stats">
+ <div class="stat"><div class="muted">Aujourd’hui</div><div class="big" id="dayTotal">0,00 €</div><div class="muted" id="dayPosts">0 poste</div></div>
+ <div class="stat"><div class="muted">Ce mois</div><div class="big" id="monthTotal">0,00 €</div><div class="muted" id="monthPosts">0 poste</div></div>
+</div>
+
+<section class="card">
+<h2>📷 Scanner un chantier</h2>
+<button class="primary" id="scanBtn">Scanner le QR code</button>
+<div id="scannerBox" class="hidden" style="margin-top:12px">
+ <video id="video" playsinline></video>
+ <p class="muted" id="scanStatus">Autorise la caméra puis présente le QR code.</p>
+ <button class="secondary" id="stopBtn">Arrêter</button>
+</div>
+<label>Ou entrer l’identifiant manuellement</label>
+<div class="row"><input id="manualQr" placeholder="Ex. CH-001"><button class="secondary" id="openBtn">Ouvrir</button></div>
+<p class="muted" id="msg"></p>
+</section>
+
+<section class="card">
+<h2>🏗️ Créer une fiche</h2>
+<label>Nom du chantier</label><input id="sheetName" placeholder="Ex. Client / adresse">
+<label>Identifiant QR</label><input id="sheetQr" placeholder="Ex. CH-001">
+<div id="newPosts"></div>
+<div class="row" style="margin-top:10px"><button class="secondary" id="addPost">+ Poste</button><button class="primary" id="saveSheet">Enregistrer</button></div>
+</section>
+
+<section class="card hidden" id="activeCard">
+<h2 id="activeName"></h2><div class="muted" id="activeQr"></div>
+<div class="muted" style="margin:12px 0">Coche uniquement les postes réalisés.</div>
+<div id="activePosts"></div>
+<div style="font-size:20px;font-weight:800;margin:12px 0">Total : <span id="selectedTotal">0,00 €</span></div>
+<label>Date</label><input type="date" id="workDate">
+<button class="primary" id="validate" style="margin-top:10px">Valider les postes</button>
+</section>
+
+<section class="card">
+<div class="row"><h2 style="margin:0">📜 Historique</h2><button class="danger" id="clearHistory">Effacer</button></div>
+<div id="history"></div>
+</section>
+
+<section class="card">
+<h2>⚙️ Mes fiches</h2>
+<div id="sheets"></div>
+</section>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const euro=n=>new Intl.NumberFormat('fr-BE',{style:'currency',currency:'EUR'}).format(n);
+const dateNow=()=>new Date().toLocaleDateString('en-CA');
+let sheets=JSON.parse(localStorage.getItem('forfait_sheets')||'[]');
+let history=JSON.parse(localStorage.getItem('forfait_history')||'[]');
+let active=null, stream=null, detector=null, scanning=false;
+
+function save(){localStorage.setItem('forfait_sheets',JSON.stringify(sheets));localStorage.setItem('forfait_history',JSON.stringify(history));}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+function addPost(name='',amount=''){
+ const d=document.createElement('div');d.className='row';d.style.marginBottom='8px';
+ d.innerHTML='<input class="pn" placeholder="Nom du poste" value="'+esc(name)+'"><input class="pa" type="number" min="0" step=".01" placeholder="€" value="'+esc(amount)+'"><button class="danger del">×</button>';
+ d.querySelector('.del').onclick=()=>d.remove();$('newPosts').appendChild(d);
+}
+$('addPost').onclick=()=>addPost();addPost();
+
+$('saveSheet').onclick=()=>{
+ const name=$('sheetName').value.trim(),qr=$('sheetQr').value.trim();
+ const posts=[...document.querySelectorAll('#newPosts .row')].map(r=>({name:r.querySelector('.pn').value.trim(),amount:+r.querySelector('.pa').value})).filter(p=>p.name&&Number.isFinite(p.amount)&&p.amount>=0);
+ if(!name||!qr||!posts.length){$('msg').textContent='Complète le chantier, le QR et au moins un poste.';return}
+ sheets=sheets.filter(s=>s.qr!==qr);sheets.push({name,qr,posts});save();
+ $('sheetName').value='';$('sheetQr').value='';$('newPosts').innerHTML='';addPost();
+ $('msg').textContent='Fiche enregistrée ✓';render();
+};
+
+function openSheet(qr){
+ const s=sheets.find(x=>x.qr===qr);
+ if(!s){$('msg').textContent='Fiche introuvable.';return}
+ active={sheet:s,selected:new Set()};$('activeCard').classList.remove('hidden');$('activeName').textContent=s.name;$('activeQr').textContent='QR : '+s.qr;renderActive();
+ window.scrollTo({top:$('activeCard').offsetTop-10,behavior:'smooth'});
+}
+$('openBtn').onclick=()=>openSheet($('manualQr').value.trim());
+$('manualQr').onkeydown=e=>{if(e.key==='Enter')openSheet($('manualQr').value.trim())};
+
+function renderActive(){
+ if(!active)return;let total=0;const box=$('activePosts');box.innerHTML='';
+ active.sheet.posts.forEach((p,i)=>{
+  const d=document.createElement('label');d.className='post';
+  d.innerHTML='<input type="checkbox"><div><div>'+esc(p.name)+'</div><div class="muted">'+euro(p.amount)+'</div></div>';
+  const cb=d.querySelector('input');cb.checked=active.selected.has(i);
+  cb.onchange=()=>{cb.checked?active.selected.add(i):active.selected.delete(i);renderActive()};box.appendChild(d);
+  if(active.selected.has(i))total+=p.amount;
+ });
+ $('selectedTotal').textContent=euro(total);
+}
+$('validate').onclick=()=>{
+ if(!active||!active.selected.size){$('msg').textContent='Sélectionne au moins un poste.';return}
+ const posts=[...active.selected].map(i=>active.sheet.posts[i]);
+ history.push({date:$('workDate').value,name:active.sheet.name,qr:active.sheet.qr,posts:posts.map(p=>p.name),total:posts.reduce((a,p)=>a+p.amount,0)});
+ save();active.selected.clear();renderActive();render();$('msg').textContent='Forfait enregistré ✓';
+};
+
+function render(){
+ const today=dateNow(),month=today.slice(0,7),dh=history.filter(h=>h.date===today),mh=history.filter(h=>h.date.slice(0,7)===month);
+ $('dayTotal').textContent=euro(dh.reduce((a,h)=>a+h.total,0));$('monthTotal').textContent=euro(mh.reduce((a,h)=>a+h.total,0));
+ const dp=dh.reduce((a,h)=>a+h.posts.length,0),mp=mh.reduce((a,h)=>a+h.posts.length,0);
+ $('dayPosts').textContent=dp+' poste'+(dp===1?'':'s');$('monthPosts').textContent=mp+' poste'+(mp===1?'':'s');
+ $('history').innerHTML=history.length?[...history].reverse().map((h,i)=>'<div class="history"><b>'+esc(h.name)+'</b><br><span class="muted">'+esc(h.date)+' · '+h.posts.length+' poste(s) · '+esc(h.posts.join(', '))+'</span><br><b>'+euro(h.total)+'</b></div>').join(''):'<p class="muted">Aucun chantier validé.</p>';
+ $('sheets').innerHTML=sheets.length?sheets.map(s=>'<div class="history"><b>'+esc(s.name)+'</b><br><span class="muted">'+esc(s.qr)+' · '+s.posts.length+' poste(s)</span><br><button class="secondary edit" data-qr="'+esc(s.qr)+'">Ouvrir</button></div>').join(''):'<p class="muted">Aucune fiche.</p>';
+ document.querySelectorAll('.edit').forEach(b=>b.onclick=()=>openSheet(b.dataset.qr));
+}
+$('clearHistory').onclick=()=>{if(confirm('Effacer tout l’historique ?')){history=[];save();render()}};
+
+async function startScan(){
+ if(scanning)return;
+ if(!('BarcodeDetector' in window)){ $('msg').textContent='Le scan caméra automatique n’est pas disponible dans ce navigateur. Utilise la saisie manuelle du QR.';return; }
+ try{
+  detector=new BarcodeDetector({formats:['qr_code']});
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});
+  $('video').srcObject=stream;await $('video').play();$('scannerBox').classList.remove('hidden');scanning=true;scanLoop();
+ }catch(e){$('msg').textContent='Caméra refusée ou indisponible. Autorise la caméra puis réessaie.'}
+}
+async function scanLoop(){
+ if(!scanning)return;
+ try{const codes=await detector.detect($('video'));if(codes.length){const value=codes[0].rawValue;stopScan();$('manualQr').value=value;openSheet(value);return}}catch(e){}
+ requestAnimationFrame(scanLoop);
+}
+function stopScan(){scanning=false;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('video').srcObject=null;$('scannerBox').classList.add('hidden')}
+$('scanBtn').onclick=startScan;$('stopBtn').onclick=stopScan;
+$('workDate').value=dateNow();render();
+</script>
+</body></html>
