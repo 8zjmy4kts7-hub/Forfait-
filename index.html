@@ -39,7 +39,7 @@ video{width:100%;border-radius:14px;background:#111;display:block}
 
 <section class="card">
 <h2>📷 Scanner un chantier</h2>
-<button class="primary" id="scanBtn">Scanner le QR code</button>
+<button class="primary" id="scanBtn">Scanner le numéro de chantier</button>
 <div id="scannerBox" class="hidden" style="margin-top:12px">
  <div id="qr-reader" style="width:100%"></div>
  <p class="muted" id="scanStatus">Autorise la caméra puis présente le QR code.</p>
@@ -53,7 +53,7 @@ video{width:100%;border-radius:14px;background:#111;display:block}
 <section class="card">
 <h2>🏗️ Créer une fiche</h2>
 <label>Nom du chantier</label><input id="sheetName" placeholder="Ex. Client / adresse">
-<label>Identifiant QR</label><input id="sheetQr" placeholder="Ex. CH-001">
+<label>Numéro de chantier</label><input id="sheetQr" placeholder="Ex. 1254" inputmode="numeric">
 <div id="newPosts"></div>
 <div class="row" style="margin-top:10px"><button class="secondary" id="addPost">+ Poste</button><button class="primary" id="saveSheet">Enregistrer</button></div>
 </section>
@@ -99,7 +99,7 @@ $('addPost').onclick=()=>addPost();addPost();
 $('saveSheet').onclick=()=>{
  const name=$('sheetName').value.trim(),qr=$('sheetQr').value.trim();
  const posts=[...document.querySelectorAll('#newPosts .row')].map(r=>({name:r.querySelector('.pn').value.trim(),amount:+r.querySelector('.pa').value})).filter(p=>p.name&&Number.isFinite(p.amount)&&p.amount>=0);
- if(!name||!qr||!posts.length){$('msg').textContent='Complète le chantier, le QR et au moins un poste.';return}
+ if(!name||!qr||!posts.length){$('msg').textContent='Complète le chantier, le numéro de chantier et au moins un poste.';return}
  sheets=sheets.filter(s=>s.qr!==qr);sheets.push({name,qr,posts});save();
  $('sheetName').value='';$('sheetQr').value='';$('newPosts').innerHTML='';addPost();
  $('msg').textContent='Fiche enregistrée ✓';render();
@@ -107,8 +107,8 @@ $('saveSheet').onclick=()=>{
 
 function openSheet(qr){
  const s=sheets.find(x=>x.qr===qr);
- if(!s){$('msg').textContent='Fiche introuvable.';return}
- active={sheet:s,selected:new Set()};$('activeCard').classList.remove('hidden');$('activeName').textContent=s.name;$('activeQr').textContent='QR : '+s.qr;renderActive();
+ if(!s){$('msg').textContent='Chantier introuvable : '+qr+'. Vérifie le numéro enregistré dans la fiche.';return}
+ active={sheet:s,selected:new Set()};$('activeCard').classList.remove('hidden');$('activeName').textContent=s.name;$('activeQr').textContent='N° chantier : '+s.qr;renderActive();
  window.scrollTo({top:$('activeCard').offsetTop-10,behavior:'smooth'});
 }
 $('openBtn').onclick=()=>openSheet($('manualQr').value.trim());
@@ -151,7 +151,7 @@ async function startScan(){
  }
  try{
   $('scannerBox').classList.remove('hidden');
-  $('scanStatus').textContent='Autorise la caméra puis présente le QR code devant le cadre.';
+  $('scanStatus').textContent='Présente le QR/barcode contenant le numéro de chantier devant le cadre.';
   qrScanner=new Html5Qrcode('qr-reader');
   scanning=true;
   await qrScanner.start(
